@@ -149,7 +149,7 @@
     "eslint-plugin-import": "^2.24.2",
     "eslint-plugin-local-rules": "0.1.0",
     "event-target-shim": "^6.0.2",
-    "exorcist": "^1.0.1",
+    "exorcist": "^2.0.0",
     "firebase": "^9.0.2",
     "gh-pages": "^2.0.1",
     "glob": "^7.1.3",
