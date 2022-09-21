@@ -3,16 +3,17 @@
  * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the License. You may obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
  * Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions and limitations under the License.
  */
-'use strict';
 
-/* eslint-env jest */
+import fs from 'fs';
+import path from 'path';
+import {createRequire} from 'module';
 
-const fs = require('fs');
-const path = require('path');
-const {inlineFs} = require('../../plugins/inline-fs.js');
+import {inlineFs} from '../../plugins/inline-fs.js';
+import {LH_ROOT} from '../../../root.js';
 
-const {LH_ROOT} = require('../../../root.js');
-const filepath = `${LH_ROOT}/lighthouse-core/index.js`;
+const require = createRequire(import.meta.url);
+
+const filepath = `${LH_ROOT}/core/index.js`;
 
 describe('inline-fs', () => {
   const tmpPath = `${LH_ROOT}/.tmp/inline-fs/test.txt`;
@@ -241,6 +242,18 @@ describe('inline-fs', () => {
       });
     });
 
+    it('substitutes Lighthouse-specific LH_ROOT', async () => {
+      fs.writeFileSync(tmpPath, 'lh_root text content');
+
+      const constructedPath = '`${LH_ROOT}/.tmp/inline-fs/test.txt`';
+      const content = `const myRootRelativeContent = fs.readFileSync(${constructedPath}, 'utf8');`;
+      const result = await inlineFs(content, filepath);
+      expect(result).toEqual({
+        code: `const myRootRelativeContent = "lh_root text content";`,
+        warnings: [],
+      });
+    });
+
     describe('fs.readFileSync', () => {
       it('inlines content with quotes', async () => {
         fs.writeFileSync(tmpPath, `"quoted", and an unbalanced quote: "`);
@@ -333,7 +346,10 @@ describe('inline-fs', () => {
       });
 
       it('warns and skips on unsupported encoding', async () => {
-        const content = `const myTextContent = fs.readFileSync('${tmpPath}', 'binary');`;
+        const content = `const myTextContent = fs.readFileSync(
+          '${tmpPath}',
+          'binary'
+        );`;
         const result = await inlineFs(content, filepath);
         expect(result).toEqual({
           code: null,
@@ -341,8 +357,8 @@ describe('inline-fs', () => {
             text: 'only utf8 readFileSync is supported',
             location: {
               file: filepath,
-              line: 1,
-              column: 105,
+              line: 3,
+              column: 10,
             },
           }],
         });
@@ -435,7 +451,10 @@ describe('inline-fs', () => {
       });
 
       it('warns and skips on unsupported encoding', async () => {
-        const content = `const files = fs.readdirSync('${tmpDir}', 'binary');`;
+        const content = `const files = fs.readdirSync(
+          '${tmpDir}',
+          'binary'
+        );`;
         const result = await inlineFs(content, filepath);
         expect(result).toEqual({
           code: null,
@@ -443,8 +462,8 @@ describe('inline-fs', () => {
             text: 'only utf8 readdirSync is supported',
             location: {
               file: filepath,
-              line: 1,
-              column: 87,
+              line: 3,
+              column: 10,
             },
           }],
         });

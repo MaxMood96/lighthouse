@@ -3,31 +3,25 @@
  * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the License. You may obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
  * Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions and limitations under the License.
  */
-'use strict';
-
-/* eslint-env jest */
 
 import fs from 'fs';
 import assert from 'assert';
 
-import {jest} from '@jest/globals';
 import puppeteer from 'puppeteer';
 
-import {server} from '../../lighthouse-cli/test/fixtures/static-server.js';
-import defaultConfig from '../../lighthouse-core/config/default-config.js';
+import {Server} from '../../cli/test/fixtures/static-server.js';
+import defaultConfig from '../../core/config/default-config.js';
 import {LH_ROOT} from '../../root.js';
 import {getCanonicalLocales} from '../../shared/localization/format.js';
 
 const portNumber = 10200;
 const viewerUrl = `http://localhost:${portNumber}/dist/gh-pages/viewer/index.html`;
-const sampleLhr = LH_ROOT + '/lighthouse-core/test/results/sample_v2.json';
+const sampleLhr = LH_ROOT + '/core/test/results/sample_v2.json';
+// eslint-disable-next-line max-len
+const sampleFlowResult = LH_ROOT + '/core/test/fixtures/fraggle-rock/reports/sample-flow-result.json';
 
 const lighthouseCategories = Object.keys(defaultConfig.categories);
 const getAuditsOfCategory = category => defaultConfig.categories[category].auditRefs;
-
-// These tests run in Chromium and have their own timeouts.
-// Make sure we get the more helpful test-specific timeout error instead of jest's generic one.
-jest.setTimeout(35_000);
 
 // TODO: should be combined in some way with clients/test/extension/extension-test.js
 describe('Lighthouse Viewer', () => {
@@ -61,7 +55,9 @@ describe('Lighthouse Viewer', () => {
       });
   }
 
-  beforeAll(async () => {
+  let server;
+  before(async () => {
+    server = new Server(portNumber);
     await server.listen(portNumber, 'localhost');
 
     // start puppeteer
@@ -72,7 +68,7 @@ describe('Lighthouse Viewer', () => {
     viewerPage.on('pageerror', pageError => pageErrors.push(pageError));
   });
 
-  afterAll(async function() {
+  after(async function() {
     // Log any page load errors encountered in case before() failed.
     // eslint-disable-next-line no-console
     if (pageErrors.length > 0) console.error(pageErrors);
@@ -83,12 +79,37 @@ describe('Lighthouse Viewer', () => {
     ]);
   });
 
+  describe('Renders the flow report', () => {
+    before(async () => {
+      await viewerPage.goto(viewerUrl, {waitUntil: 'networkidle2', timeout: 30000});
+      const fileInput = await viewerPage.$('#hidden-file-input');
+      await fileInput.uploadFile(sampleFlowResult);
+      await viewerPage.waitForSelector('.App', {timeout: 30000});
+    });
+
+    it('should load with no errors', async () => {
+      assert.deepStrictEqual(pageErrors, []);
+    });
+
+    it('renders the summary page', async () => {
+      const summary = await viewerPage.evaluate(() => document.querySelector('.Summary'));
+      assert.ok(summary);
+
+      const scores = await viewerPage.evaluate(() =>
+        Array.from(document.querySelectorAll('.lh-gauge__wrapper, .lh-fraction__wrapper'))
+      );
+      assert.equal(scores.length, 14);
+
+      assert.deepStrictEqual(pageErrors, []);
+    });
+  });
+
   describe('Renders the report', () => {
-    beforeAll(async function() {
+    before(async () => {
       await viewerPage.goto(viewerUrl, {waitUntil: 'networkidle2', timeout: 30000});
       const fileInput = await viewerPage.$('#hidden-file-input');
       await fileInput.uploadFile(sampleLhr);
-      await viewerPage.waitForSelector('.lh-container', {timeout: 30000});
+      await viewerPage.waitForSelector('.lh-categories', {timeout: 30000});
     });
 
     it('should load with no errors', async () => {
@@ -105,10 +126,16 @@ describe('Lighthouse Viewer', () => {
     });
 
     it('should contain audits of all categories', async () => {
+      const nonNavigationAudits = [
+        'experimental-interaction-to-next-paint',
+        'uses-responsive-images-snapshot',
+        'work-during-interaction',
+      ];
       for (const category of lighthouseCategories) {
         let expected = getAuditsOfCategory(category);
         if (category === 'performance') {
-          expected = getAuditsOfCategory(category).filter(a => !!a.group);
+          expected = getAuditsOfCategory(category)
+            .filter(a => a.group !== 'hidden' && !nonNavigationAudits.includes(a.id));
         }
         expected = expected.map(audit => audit.id);
         const elementIds = await getAuditElementsIds({category, selector: selectors.audits});
@@ -174,6 +201,53 @@ describe('Lighthouse Viewer', () => {
       expect(resultAfterSwap.selectedValue).toBe('es');
       expect(resultAfterSwap.sampleString).toBe('Copiar JSON');
     });
+
+    it('should support saving as html', async () => {
+      const tmpDir = `${LH_ROOT}/.tmp/pptr-downloads`;
+      fs.rmSync(tmpDir, {force: true, recursive: true});
+      const session = await viewerPage.target().createCDPSession();
+      await session.send('Browser.setDownloadBehavior', {
+        behavior: 'allow',
+        downloadPath: tmpDir,
+        eventsEnabled: true,
+      });
+
+      await viewerPage.click('.lh-tools__button');
+      await viewerPage.waitForFunction(() => {
+        return getComputedStyle(
+          document.querySelector('.lh-tools__dropdown')).visibility === 'visible';
+      });
+
+      // For some reason, clicking this button doesn't always initiate the download after upgrading to Puppeteer 16.
+      // As a workaround, we send another click signal 1s after the first to make sure the download starts.
+      // TODO: Find a more robust fix for this issue.
+      const timeoutHandle = setTimeout(() => viewerPage.click('a[data-action="save-html"]'), 1000);
+
+      const [, filename] = await Promise.all([
+        viewerPage.click('a[data-action="save-html"]'),
+        new Promise(resolve => {
+          session.on('Browser.downloadWillBegin', ({suggestedFilename}) => {
+            resolve(suggestedFilename);
+          });
+        }),
+        new Promise(resolve => {
+          session.on('Browser.downloadProgress', ({state}) => {
+            if (state === 'completed') resolve();
+          });
+        }),
+      ]);
+
+      clearTimeout(timeoutHandle);
+
+      const savedPage = await browser.newPage();
+      const savedPageErrors = [];
+      savedPage.on('pageerror', pageError => savedPageErrors.push(pageError));
+      const firstLogPromise =
+        new Promise(resolve => savedPage.once('console', e => resolve(e.text())));
+      await savedPage.goto(`file://${tmpDir}/${filename}`);
+      expect(await firstLogPromise).toEqual('window.__LIGHTHOUSE_JSON__ JSHandle@object');
+      expect(savedPageErrors).toHaveLength(0);
+    });
   });
 
   describe('PSI', () => {
@@ -196,7 +270,7 @@ describe('Lighthouse Viewer', () => {
     const badPsiResponse = {
       status: 500,
       contentType: 'application/json',
-      body: JSON.stringify({error: {message: 'Test error'}}),
+      body: JSON.stringify({error: {message: 'badPsiResponse error'}}),
       headers: {
         'Access-Control-Allow-Origin': '*',
       },
@@ -218,12 +292,12 @@ describe('Lighthouse Viewer', () => {
       }
     }
 
-    beforeAll(async () => {
+    before(async () => {
       await viewerPage.setRequestInterception(true);
       viewerPage.on('request', onRequest);
     });
 
-    afterAll(async () => {
+    after(async () => {
       viewerPage.off('request', onRequest);
       await viewerPage.setRequestInterception(false);
     });
@@ -332,11 +406,11 @@ describe('Lighthouse Viewer', () => {
       // Wait for error.
       const errorEl = await viewerPage.waitForSelector('#lh-log.lh-show');
       const errorMessage = await viewerPage.evaluate(errorEl => errorEl.textContent, errorEl);
-      expect(errorMessage).toBe('Test error');
+      expect(errorMessage).toBe('badPsiResponse error');
 
       // One error.
       expect(pageErrors).toHaveLength(1);
-      expect(pageErrors[0].message).toContain('Test error');
+      expect(pageErrors[0].message).toContain('badPsiResponse error');
     });
   });
 });

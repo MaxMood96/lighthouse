@@ -4,18 +4,19 @@
  * Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions and limitations under the License.
  */
 
-import {jest} from '@jest/globals';
+import jestMock from 'jest-mock';
 import {act, render} from '@testing-library/preact';
 
+import {timers} from '../../core/test/test-env/fake-timers.js';
 import {FlowStepThumbnail} from '../src/common';
 
-let lhr: LH.ReportResult;
+let lhr: LH.Result;
 
-jest.useFakeTimers();
+timers.useFakeTimers();
 
 describe('FlowStepThumbnail', () => {
   beforeEach(() => {
-    global.console.warn = jest.fn();
+    global.console.warn = jestMock.fn();
 
     lhr = {
       gatherMode: 'navigation',
@@ -24,8 +25,17 @@ describe('FlowStepThumbnail', () => {
         'full-page-screenshot': {
           details: {
             type: 'full-page-screenshot',
-            screenshot: {data: 'baef01', width: 400, height: 600},
+            screenshot: {data: 'FPS', width: 400, height: 600},
             nodes: {},
+          },
+        },
+        'screenshot-thumbnails': {
+          details: {
+            type: 'filmstrip',
+            items: [
+              {data: 'frame1'},
+              {data: 'frame2'},
+            ],
           },
         },
       },
@@ -33,7 +43,7 @@ describe('FlowStepThumbnail', () => {
   });
 
   it('renders a thumbnail', () => {
-    const root = render(<FlowStepThumbnail reportResult={lhr} width={200} height={200} />);
+    const root = render(<FlowStepThumbnail lhr={lhr} width={200} height={200} />);
 
     const thumbnail = root.getByAltText(/Screenshot/);
     expect(thumbnail.style.width).toEqual('200px');
@@ -41,14 +51,14 @@ describe('FlowStepThumbnail', () => {
   });
 
   it('renders nothing without dimensions', () => {
-    const root = render(<FlowStepThumbnail reportResult={lhr} />);
+    const root = render(<FlowStepThumbnail lhr={lhr} />);
 
     expect(() => root.getByAltText(/Screenshot/)).toThrow();
     expect(global.console.warn).toHaveBeenCalled();
   });
 
   it('interpolates height', () => {
-    const root = render(<FlowStepThumbnail reportResult={lhr} width={200} />);
+    const root = render(<FlowStepThumbnail lhr={lhr} width={200} />);
 
     const thumbnail = root.getByAltText(/Screenshot/);
     expect(thumbnail.style.width).toEqual('200px');
@@ -56,25 +66,31 @@ describe('FlowStepThumbnail', () => {
   });
 
   it('interpolates width', () => {
-    const root = render(<FlowStepThumbnail reportResult={lhr} height={150} />);
+    const root = render(<FlowStepThumbnail lhr={lhr} height={150} />);
 
     const thumbnail = root.getByAltText(/Screenshot/);
     expect(thumbnail.style.width).toEqual('100px');
     expect(thumbnail.style.height).toEqual('150px');
   });
 
+  it('uses last filmstrip thumbnail', () => {
+    const root = render(<FlowStepThumbnail lhr={lhr} height={150} />);
+
+    const thumbnail = root.getByAltText(/Screenshot/) as HTMLImageElement;
+    expect(thumbnail.src).toContain('frame2');
+  });
+
+  it('uses full page screenshot if filmstrip unavailable', () => {
+    delete lhr.audits['screenshot-thumbnails'];
+    const root = render(<FlowStepThumbnail lhr={lhr} height={150} />);
+
+    const thumbnail = root.getByAltText(/Screenshot/) as HTMLImageElement;
+    expect(thumbnail.src).toContain('FPS');
+  });
+
   it('renders animated thumbnail for timespan', async () => {
     lhr.gatherMode = 'timespan';
-    lhr.audits['screenshot-thumbnails'] = {
-      details: {
-        type: 'filmstrip',
-        items: [
-          {data: 'frame1'},
-          {data: 'frame2'},
-        ],
-      },
-    } as any;
-    const root = render(<FlowStepThumbnail reportResult={lhr} height={150} />);
+    const root = render(<FlowStepThumbnail lhr={lhr} height={150} />);
 
     const thumbnail = root.getByAltText(/Animated/) as HTMLImageElement;
     expect(thumbnail.style.width).toEqual('100px');
@@ -82,7 +98,7 @@ describe('FlowStepThumbnail', () => {
 
     expect(thumbnail.src).toContain('frame1');
     await act(() => {
-      jest.advanceTimersByTime(501);
+      timers.advanceTimersByTime(501);
     });
     expect(thumbnail.src).toContain('frame2');
   });
