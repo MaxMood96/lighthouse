@@ -5,8 +5,8 @@
     "start": "gulp"
   },
   "devDependencies": {
-    "gulp": "^3.9.1",
+    "gulp": "^4.0.0",
     "gulp-connect": "^5.0.0",
-    "lighthouse": "^8.6.0"
+    "lighthouse": "^9.3.0"
   }
 }
