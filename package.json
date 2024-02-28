@@ -132,7 +132,7 @@
     "@wardpeet/brfs": "2.1.0",
     "acorn": "^8.5.0",
     "angular": "^1.7.4",
-    "archiver": "^3.0.0",
+    "archiver": "^7.0.0",
     "browserify": "^17.0.0",
     "browserify-banner": "^1.0.15",
     "c8": "^7.4.0",
