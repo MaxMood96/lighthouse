@@ -170,7 +170,7 @@
     "pretty-json-stringify": "^0.0.2",
     "puppeteer": "^10.2.0",
     "resolve": "^1.20.0",
-    "rollup": "^2.50.6",
+    "rollup": "^3.29.5",
     "rollup-plugin-node-resolve": "^5.2.0",
     "rollup-plugin-polyfill-node": "^0.7.0",
     "rollup-plugin-replace": "^2.2.0",
