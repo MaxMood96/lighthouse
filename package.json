@@ -95,7 +95,7 @@
   },
   "devDependencies": {
     "@build-tracker/cli": "^1.0.0-beta.15",
-    "@rollup/plugin-commonjs": "^20.0.0",
+    "@rollup/plugin-commonjs": "^26.0.0",
     "@rollup/plugin-node-resolve": "^13.0.4",
     "@rollup/plugin-typescript": "^8.2.5",
     "@testing-library/preact": "^2.0.1",
@@ -144,7 +144,7 @@
     "csv-validator": "^0.0.3",
     "devtools-protocol": "0.0.901419",
     "es-main": "^1.0.2",
-    "eslint": "^7.23.0",
+    "eslint": "^9.0.0",
     "eslint-config-google": "^0.9.1",
     "eslint-plugin-import": "^2.24.2",
     "eslint-plugin-local-rules": "0.1.0",
